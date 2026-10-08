@@ -175,8 +175,9 @@ Semaphore Device::request_semaphore_external(VkSemaphoreType type,
 
 		if (!features)
 		{
-			LOGE("External semaphore handle type #%x is not supported.\n", handle_type);
-			return Semaphore{};
+			// Some drivers under-report external semaphore capabilities. Try creation
+			// and import, but do not request export unless it was reported supported.
+			LOGW("External semaphore handle type #%x reports no features, attempting creation.\n", unsigned(handle_type));
 		}
 	}
 
@@ -197,9 +198,11 @@ Semaphore Device::request_semaphore_external(VkSemaphoreType type,
 	}
 
 	VkSemaphore semaphore;
-	if (table->vkCreateSemaphore(device, &info, nullptr, &semaphore) != VK_SUCCESS)
+	const auto result = table->vkCreateSemaphore(device, &info, nullptr, &semaphore);
+	if (result != VK_SUCCESS)
 	{
-		LOGE("Failed to create external semaphore.\n");
+		LOGE("Failed to create external semaphore (handle type #%x, semaphore type %u, result %d).\n",
+		     unsigned(handle_type), unsigned(type), int(result));
 		return Semaphore{};
 	}
 
