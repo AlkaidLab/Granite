@@ -171,8 +171,13 @@ bool SemaphoreHolder::import_from_handle(ExternalHandle handle)
 {
 	if ((external_compatible_features & VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT) == 0)
 	{
-		LOGE("Semaphore is not import compatible.\n");
-		return false;
+		// These features come from vkGetPhysicalDeviceExternalSemaphoreProperties, which
+		// under-reports on some drivers (0x0 for every handle type on Intel Arc; an undefined
+		// 0x8 for D3D12_FENCE on AMD). Attempt the import below instead of rejecting here:
+		// vkImportSemaphoreWin32HandleKHR / vkImportSemaphoreFdKHR reports failure if the
+		// handle really cannot be used.
+		LOGE("Semaphore reports no IMPORTABLE bit (0x%x), attempting import anyway.\n",
+		     external_compatible_features);
 	}
 
 	if (!semaphore)

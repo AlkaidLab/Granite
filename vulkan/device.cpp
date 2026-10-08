@@ -175,8 +175,12 @@ Semaphore Device::request_semaphore_external(VkSemaphoreType type,
 
 		if (!features)
 		{
-			LOGE("External semaphore handle type #%x is not supported.\n", handle_type);
-			return Semaphore{};
+			// Do not interpret a driver-reported mask of zero as "unsupported". Some drivers report
+			// 0x0 for every handle type (Intel Arc), and others report values outside the defined
+			// bits (AMD reports 0x8 for D3D12_FENCE, while only EXPORTABLE and IMPORTABLE exist),
+			// even though importing a real handle works. Attempt creation below and let the actual
+			// vkCreateSemaphore / vkImportSemaphoreWin32HandleKHR results decide.
+			LOGE("External semaphore handle type #%x reports no features, attempting anyway.\n", handle_type);
 		}
 	}
 
