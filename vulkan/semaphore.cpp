@@ -171,12 +171,8 @@ bool SemaphoreHolder::import_from_handle(ExternalHandle handle)
 {
 	if ((external_compatible_features & VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT) == 0)
 	{
-		// These features come from vkGetPhysicalDeviceExternalSemaphoreProperties, which
-		// under-reports on some drivers (0x0 for every handle type on Intel Arc; an undefined
-		// 0x8 for D3D12_FENCE on AMD). Attempt the import below instead of rejecting here:
-		// vkImportSemaphoreWin32HandleKHR / vkImportSemaphoreFdKHR reports failure if the
-		// handle really cannot be used.
-		LOGE("Semaphore reports no IMPORTABLE bit (0x%x), attempting import anyway.\n",
+		// A missing capability bit does not prevent trying the actual import.
+		LOGW("Semaphore reports no IMPORTABLE bit (0x%x), attempting import.\n",
 		     external_compatible_features);
 	}
 
@@ -204,9 +200,10 @@ bool SemaphoreHolder::import_from_handle(ExternalHandle handle)
 	import.semaphore = semaphore;
 	import.handleType = handle.semaphore_handle_type;
 	import.flags = semaphore_type == VK_SEMAPHORE_TYPE_BINARY_KHR ? VK_SEMAPHORE_IMPORT_TEMPORARY_BIT : 0;
-	if (device->get_device_table().vkImportSemaphoreWin32HandleKHR(device->get_device(), &import) != VK_SUCCESS)
+	const auto result = device->get_device_table().vkImportSemaphoreWin32HandleKHR(device->get_device(), &import);
+	if (result != VK_SUCCESS)
 	{
-		LOGE("Failed to import semaphore handle %p!\n", handle.handle);
+		LOGE("Failed to import semaphore handle %p (type #%x, result %d).\n", handle.handle, unsigned(handle.semaphore_handle_type), int(result));
 		return false;
 	}
 #else
@@ -215,13 +212,17 @@ bool SemaphoreHolder::import_from_handle(ExternalHandle handle)
 	import.semaphore = semaphore;
 	import.handleType = handle.semaphore_handle_type;
 	import.flags = semaphore_type == VK_SEMAPHORE_TYPE_BINARY_KHR ? VK_SEMAPHORE_IMPORT_TEMPORARY_BIT : 0;
-	if (device->get_device_table().vkImportSemaphoreFdKHR(device->get_device(), &import) != VK_SUCCESS)
+	const auto result = device->get_device_table().vkImportSemaphoreFdKHR(device->get_device(), &import);
+	if (result != VK_SUCCESS)
 	{
-		LOGE("Failed to import semaphore FD %d!\n", handle.handle);
+		LOGE("Failed to import semaphore FD %d (type #%x, result %d).\n", handle.handle, unsigned(handle.semaphore_handle_type), int(result));
 		return false;
 	}
 #endif
 
+	// Keep imported objects out of the ordinary semaphore recycle pool even
+	// when the original capability query returned zero.
+	external_compatible_features |= VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT;
 	take_ownership_imported_external_semaphore_handle(handle);
 
 	signal_external();
